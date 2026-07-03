@@ -6,6 +6,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from core.flaresolverr import fetch_via_flaresolverr, flaresolverr_enabled
 from fkapi.proxy import get_proxy
 
 # Default HTTP headers for scraper-like requests
@@ -66,9 +67,17 @@ def http_get(
 
     - Adds default headers
     - Applies retries/backoff via a mounted adapter
-    - Supports optional proxy via env-configured get_proxy()
+    - Routes through FlareSolverr when enabled and use_proxy is requested
+      (footballkitarchive.com is behind a Cloudflare browser challenge)
+    - Falls back to an optional HTTP proxy via env-configured get_proxy()
     - Enforces a default timeout
     """
+    # The scrapers signal "I got blocked, escalate" by retrying with
+    # use_proxy=True. When FlareSolverr is configured, that escalation means
+    # "solve the Cloudflare challenge in a browser" rather than swap HTTP proxy.
+    if proxies is None and use_proxy and flaresolverr_enabled():
+        return fetch_via_flaresolverr(url, timeout=timeout)
+
     sess = session or get_scraper_session()
     if sess is None:
         sess = get_session(headers=headers)
