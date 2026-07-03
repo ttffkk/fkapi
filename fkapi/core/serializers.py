@@ -5,7 +5,10 @@ class ClubSerializer(Schema):
     id: int
     name: str
     slug: str
-    logo: str
+    # logo is nullable in the model (a club may be scraped before its logo is
+    # fetched); match the other serializers so /clubs/search doesn't 500 on
+    # pydantic validation. See homelab #170.
+    logo: str | None = None
 
     def __init__(self, instance=None):
         super().__init__(instance)
