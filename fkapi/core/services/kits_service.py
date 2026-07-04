@@ -26,6 +26,10 @@ class KitsService:
             competitions_html: HTML or plain text containing competition information
             slug: Kit slug for error logging
         """
+        # No league on this kit (or the row is absent) — nothing to add. Avoids
+        # creating a junk empty-named Competition from an empty string.
+        if not competitions_html or not competitions_html.strip():
+            return
         try:
             # Check if the input is HTML with links or plain text
             if "<a href=" in competitions_html:

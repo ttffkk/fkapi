@@ -139,11 +139,11 @@ def parse_kit_page(soup: BeautifulSoup) -> KitPageData:
     # Colors
     colors_str = fact_table.get_text(FIELD_COLORS)
 
-    # Competitions (League)
+    # Competitions (League) — optional. Not every kit lists a league, and the
+    # row is absent on some current pages; a missing league must not fail the
+    # whole kit import (it only 500'd the scrape before).
     comp_cell = fact_table.get_value_cell(FIELD_LEAGUE)
-    if not comp_cell:
-        raise ValueError("Competitions (League) not found")
-    competitions_html = str(comp_cell)
+    competitions_html = str(comp_cell) if comp_cell else ""
 
     return KitPageData(
         team_name=team_name,

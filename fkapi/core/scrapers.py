@@ -575,6 +575,30 @@ def _scrape_whole_club_process_season(season_container: BeautifulSoup, club: Clu
     print(Fore.CYAN + f"Completed season {season_year} for {club.name}")
 
 
+def _extract_kit_slugs(container: BeautifulSoup) -> list[str]:
+    """Harvest kit slugs from a club page's anchors.
+
+    footballkitarchive.com no longer puts the kit link inside each kit tile
+    (those are now lazy-loaded image placeholders). The kits are plain anchors
+    whose last path segment ends in ``-<digits>`` — the numeric kit id, e.g.
+    ``/arsenal-fc-2026-27-home-kit-441205/``. Club/brand/competition/season
+    links instead end in ``-<letter><digits>`` (``-t9``, ``-b28``, ``-l224``),
+    so a purely numeric trailing segment cleanly identifies a kit. We return the
+    slug with the id stripped (``arsenal-fc-2026-27-home-kit``), which the kit
+    page resolves on its own, de-duplicated in document order.
+    """
+    slugs: list[str] = []
+    seen: set[str] = set()
+    for anchor in container.find_all("a"):
+        href = anchor.get("href") or ""
+        segment = href.strip("/").split("/")[-1]
+        base, sep, tail = segment.rpartition("-")
+        if sep and base and tail.isdigit() and base not in seen:
+            seen.add(base)
+            slugs.append(base)
+    return slugs
+
+
 def _scrape_whole_club_fetch(club: Club) -> Club:
     response = http_get(f"{BASE_URL}/{club.slug}", use_proxy=True)
     if response.status_code == 403:
@@ -586,14 +610,25 @@ def _scrape_whole_club_fetch(club: Club) -> Club:
     container = soup.find("div", class_="archive-content-container")
     if not container:
         raise ValueError("Archive content container not found")
-    seasons_container = container.find_all("div", class_=COLLECTION_CONTAINER_CLASS)
-    if not seasons_container:
-        print(Fore.YELLOW + f"No seasons found for {club.name}")
+    kit_slugs = _extract_kit_slugs(container)
+    if not kit_slugs:
+        print(Fore.YELLOW + f"No kit links found for {club.name}")
         return club
-    with transaction.atomic():
-        for season_container in seasons_container:
-            _scrape_whole_club_process_season(season_container, club)
-        print(Fore.GREEN + f"Successfully scraped all kits for {club.name}")
+    print(Fore.CYAN + f"Found {len(kit_slugs)} kits for {club.name}; scraping each page...")
+    saved = 0
+    # No outer transaction: each kit is saved independently by scrape_kit, so
+    # one bad kit can't roll back the rest.
+    for slug in kit_slugs:
+        try:
+            result = scrape_kit(slug, use_proxy=True)
+            if isinstance(result, Kit):
+                saved += 1
+                print(Fore.GREEN + f"Saved kit: {slug}")
+            else:
+                print(Fore.YELLOW + f"Skipped kit (no data): {slug}")
+        except Exception as e:  # noqa: BLE001 - one kit failing must not abort the club
+            print(Fore.RED + f"Error scraping kit {slug}: {str(e)}")
+    print(Fore.GREEN + f"Scraped {saved}/{len(kit_slugs)} kits for {club.name}")
     return club
 
 
